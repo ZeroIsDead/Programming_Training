@@ -1,0 +1,92 @@
+body {
+    font-family: 'Courier New', Courier, monospace;
+    background-color: rgba(65,105,225,1);
+    color: palegreen;
+    margin-left: 7%;
+}
+
+nav {
+    padding-left: 5%;
+}
+
+#Menu {
+    height: 100%;
+    width: 7%;
+    z-index: 1;
+    position: fixed;
+    top: 0;
+    left: 0;
+    overflow-x: hidden;
+    background-color: rgb(0, 0, 0);
+    transition: 0.5s;
+}
+
+#Menu button {
+    display: none;
+    width: 100%;
+    height: max-content;
+    margin-top: 30px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    transition: 0.3s;
+    background-color: rgba(0,0,0,0);
+    color: blueviolet;
+}
+
+#Menu button:hover {
+    color: blue;
+}
+
+#Menu #state {
+    display: block;
+}
+
+b.specifier, b.Table {
+    font-family: 'Franklin Gothic Medium', 'Arial Narrow', Arial, sans-serif;
+}
+
+.full-width {
+    width: 93vw;
+}
+
+#Schedule {
+    width: 100%;
+    height: max-content;
+    margin: 0px;
+}
+
+.Schedule {
+    width: 100%;
+    margin: 10px 5px 10px 5px;
+    padding: auto;
+}
+
+.Schedule * {
+    width: max-content;
+    justify-content: center;
+    margin: 10px 10px 10px 10px;
+}
+
+.Schedule.Head {
+    border-bottom: 1px solid red;
+}
+
+button.addButton {
+    background-color: rgba(0,0,0,0);
+    border: 1px solid rgba(0,0,0,0.5); 
+    width: 50%;
+    height: 100%;
+}
+
+button.addButton:hover {
+    background-color: blue;
+}
+
+.center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 10%;
+    background-color: inherit;
+}

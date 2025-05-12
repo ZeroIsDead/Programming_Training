@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>Schedule</title>
+        <link rel="stylesheet" type="text/css" href="../style/mainViews.css">
+        <script src="../main.js"></script>
+    </head>
+    
+    
+    <body>
+            <h1>Schedule</h1>
+            <p>Table: <b class="Table">Unnamed</b></p>
+            <p>Specifier: <b class="specifier">None</b></p>
+        <nav>
+            <div id="Menu">
+                <button id="state" onclick="decideMenuState()" data-state="open">Open</button>
+                <button id="specifiers" onclick="changeMenuContent(this)">Specifiers</button>
+                <button id="tables" onclick="changeMenuContent(this)">Tables</button>
+                <button id="import" onclick="changeMenuContent(this)">Import</button>
+            </div>
+        </nav>
+    
+        <!-- 
+                Tables/Specifiers -> Change menu into a list of all 
+                    specifiers/tables 
+                    and buttons to add, rename, change (etc) 
+                    specifiers/tables.
+        -->
+    
+        <div class="full-width">
+            <table id="Schedule">
+                <tr class="Schedule Head">
+                    <td><h5>Periods</h5></td>
+                    <td><h5>Monday</h5></td>
+                    <td><h5>Tuesday</h5></td>
+                    <td><h5>Wednesday</h5></td>
+                    <td><h5>Thursday</h5></td>
+                    <td><h5>Friday</h5></td>
+                    <td><h5>Saturday</h5></td>
+                    <td><h5>Sunday</h5></td>
+                </tr>
+                <tr class="Schedule Content">
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                </tr>
+            </table>
+            
+            <div class="center">
+                <button class="addButton" onclick="addNewRecord()">Add New</button>
+            </div>
+        </div>
+    </body>
+</html>
