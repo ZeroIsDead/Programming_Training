@@ -2,8 +2,7 @@
 %define BOOK_SIZE 20
 
 section .data                   ; Data segment (initialized data)
-    system_title_text db "Library Management System"
-    system_title_text_len equ $ - system_title_text
+    colon_separator db ':'
 
     clear_screen_sequence db 0x1b, "[H", 0x1b, "[J"
     clear_screen_len equ $ - clear_screen_sequence
@@ -25,8 +24,6 @@ section .data                   ; Data segment (initialized data)
 
     invalid_msg db "Invalid Input!", 10
     invalid_msg_len equ $ - invalid_msg
-
-    
 
     list_book_menu_text db "These are the Books Recorded in the System: ", 10
     list_book_menu_text_len equ $ - list_book_menu_text
@@ -105,8 +102,8 @@ section .bss                        ; BSS segment (uninitialized data)
     inputBuffer resb 100                        ; buffer for user input - Reads all 100 bytes regardless
     input resb 100                              ; current user input - assume a line is one input - stores one line/current user input
     fileBuffer resb 100                         ; buffer for file io
-    fd_in resb 4                                ; File descriptor for reading
-    fd_out resb 4                               ; File descriptor for writing
+    fd_in resd 1                               ; File descriptor for reading
+    fd_out resd 1                               ; File descriptor for writing
 
 section .text               ; Code segment
     global _start           ; Entry point for linker (Linux) or main (Windows)
@@ -142,6 +139,7 @@ _start:
 
 get_len:  ; String stored in edi, returns len at edx
     push ecx
+    push edi
     xor ecx, ecx ; reset to 0
 
     .len_loop:
@@ -157,6 +155,7 @@ get_len:  ; String stored in edi, returns len at edx
 
     .done_len:
         mov edx, ecx
+        pop edi
         pop ecx
         ret
 
@@ -214,42 +213,66 @@ strip_prefix_and_suffix_whitespaces: ; assumes string address at edi and that on
         pop esi
 
         ret
-
-
 read_file: ; open and read book txt
     ; Open file for reading (O_RDONLY)
     mov eax, 5          ; sys_open
     mov ebx, file       ; filename
     mov ecx, 0          ; O_RDONLY
-    mov edx, 0          ; mode (ignored)
+    mov edx, 0664o      ; mode (read/write permissions)
     int 0x80
     
     ; Check for errors
     cmp eax, 0
     jl .file_error      ; If eax < 0, there was an error
     
-    ; Store file descriptor
-    mov byte [fd_in], eax
+    ; Store file descriptor properly as a dword
+    mov dword [fd_in], eax
+    
+    ; Clear fileBuffer before reading
+    push ecx
+    push eax
+    xor eax, eax        ; Value to store (0)
+    mov ecx, 100
+    mov edi, fileBuffer
+    rep stosb           ; Store byte in AL at ES:EDI, increment EDI
+    pop eax
+    pop ecx
     
     ; Read file content
     mov eax, 3          ; sys_read
-    mov ebx, byte [fd_in]    ; file descriptor
+    mov ebx, dword [fd_in]    ; file descriptor
     mov ecx, fileBuffer ; buffer
     mov edx, 100        ; buffer size
     int 0x80
     
+    ; Check read result
+    cmp eax, 0
+    jl .read_error      ; Error occurred
+    
+    ; Make sure the buffer is null-terminated
+    mov byte [fileBuffer + eax], 0
+    
     ; Close the file
     push eax            ; Save number of bytes read
     mov eax, 6          ; sys_close
-    mov ebx, byte [fd_in]
+    mov ebx, dword [fd_in]
     int 0x80
     pop eax             ; Restore number of bytes read
     
     ret
     
+    .read_error:
+        ; Handle read error
+        mov eax, 6      ; sys_close
+        mov ebx, dword [fd_in]
+        int 0x80
+        ; Fall through to file_error
+    
     .file_error:
         ; Initialize empty state if file doesn't exist
-        mov byte [book_num], 0 ; possible change
+        mov byte [book_num], 0
+        ; Ensure fileBuffer is empty
+        mov byte [fileBuffer], 0
         ret
 
 write_file: ; Save books back to file
@@ -257,40 +280,115 @@ write_file: ; Save books back to file
     mov eax, 5          ; sys_open
     mov ebx, file       ; filename
     mov ecx, 0x241      ; O_WRONLY | O_CREAT | O_TRUNC (0x01 | 0x40 | 0x200)
-    mov edx, 0666o      ; mode (read/write permissions)
+    mov edx, 0664o      ; mode (read/write permissions)
     int 0x80
     
-    ; Store file descriptor
-    mov [fd_out], eax
+    ; Check for errors
+    cmp eax, 0
+    jl .write_error
+    
+    ; Store file descriptor properly
+    mov dword [fd_out], eax
     
     ; Prepare to write each book
     xor ecx, ecx        ; Book index counter
-    
+
     .write_loop:
         cmp cl, byte [book_num]
         jge .done_writing
         
         ; Get book at index
         push ecx
-        call get_book_at_index  ; Sets edi to point to current book
         
+        ; Clear the buffer first
+        push ecx
+        push eax
+        xor eax, eax
+        mov ecx, 100
+        mov edi, fileBuffer
+        rep stosb        ; Clear buffer
+        pop eax
+        pop ecx
+        
+        call get_book_at_index  ; Sets edi to point to current book
+
         ; Calculate string length
         call get_len            ; Returns length in edx
-        
-        ; Write book to file
+
+        ; Make sure length is valid
+        cmp edx, 0
+        jle .next_book
+        cmp edi, 0
+        jle .next_book
+        cmp byte [edi], 0
+        jle .next_book
+
+        ; Write book title to file
         mov eax, 4              ; sys_write
-        mov ebx, [fd_out]       ; file descriptor
+        mov ebx, dword [fd_out] ; file descriptor
         mov ecx, edi            ; buffer (book string)
         ; edx already has length
+        int 0x80
+
+        ; Check write result
+        cmp eax, 0
+        jl .write_error_close
+        
+        ; Write stock and borrowed information - convert to a simple format
+        ; Format: "title:stock:borrowed\n"
+        
+        ; Now write the colon separator
+        mov eax, 4
+        mov ebx, dword [fd_out]
+        mov ecx, colon_separator ; we need to add this to .data
+        mov edx, 1
+        int 0x80
+        
+        ; Write available stock (convert to ASCII)
+        pop ecx              ; Get book index back
+        push ecx             ; And save it again
+        
+        ; Convert stock to ASCII and write
+        mov al, byte [books_stock_available + ecx]
+        add al, '0'          ; Convert number to ASCII
+        mov byte [fileBuffer], al
+        
+        mov eax, 4
+        mov ebx, dword [fd_out]
+        mov ecx, fileBuffer
+        mov edx, 1
+        int 0x80
+        
+        ; Write another colon separator
+        mov eax, 4
+        mov ebx, dword [fd_out]
+        mov ecx, colon_separator
+        mov edx, 1
+        int 0x80
+        
+        ; Write borrowed amount (convert to ASCII)
+        pop ecx              ; Get book index back
+        push ecx             ; And save it again
+        
+        ; Convert borrowed to ASCII and write
+        mov al, byte [books_stock_borrowed + ecx]
+        add al, '0'          ; Convert number to ASCII
+        mov byte [fileBuffer], al
+        
+        mov eax, 4
+        mov ebx, dword [fd_out]
+        mov ecx, fileBuffer
+        mov edx, 1
         int 0x80
         
         ; Write newline
         mov eax, 4
-        mov ebx, [fd_out]
+        mov ebx, dword [fd_out]
         mov ecx, newline
         mov edx, 1
         int 0x80
         
+    .next_book:
         ; Next book
         pop ecx
         inc ecx
@@ -299,10 +397,155 @@ write_file: ; Save books back to file
     .done_writing:
         ; Close the file
         mov eax, 6          ; sys_close
-        mov ebx, [fd_out]
+        mov ebx, dword [fd_out]
         int 0x80
         ret
+        
+    .write_error_close:
+        ; Close file before returning error
+        pop ecx              ; Clean the stack
+        mov eax, 6
+        mov ebx, dword [fd_out]
+        int 0x80
+        ; Fall through to write_error
+        
+    .write_error:
+        ; Handle write error
+        ret
 
+initialize_book_array: ; read from text file and places saved books into array
+    pusha
+        
+    call read_file  ; Read file content into fileBuffer
+    
+    ; If fileBuffer is empty, we're done (empty file or file doesn't exist)
+    cmp byte [fileBuffer], 0
+    je .done_parsing
+    
+    ; Parse file content and populate books array
+    xor ecx, ecx    ; Book counter
+    mov esi, fileBuffer
+        
+    .parse_loop:
+        ; Check if we've reached the end of input or book limit
+        cmp byte [esi], 0
+        je .done_parsing
+        cmp cl, BOOK_MAX_SIZE
+        jge .done_parsing
+        
+        ; Save book counter
+        push ecx
+        
+        ; Calculate destination in books array
+        movzx ecx, byte [book_num]
+        imul ecx, BOOK_SIZE    ; ecx = book_num * BOOK_SIZE
+        lea edi, [books + ecx] ; edi points to book slot
+        
+        ; Parse line format: "title:stock:borrowed"
+        ; First read the title until we hit a colon
+        mov edx, 0  ; Character counter
+        
+        .parse_title_loop:
+            mov al, byte [esi]
+            
+            ; Check for end of line, string, or field separator
+            cmp al, 0
+            je .done_parsing
+            cmp al, 10
+            je .end_line
+            cmp al, 13
+            je .end_line
+            cmp al, ':'
+            je .parse_stock
+            
+            ; Copy character to book title
+            mov byte [edi + edx], al
+            inc esi
+            inc edx
+            
+            ; Check if we've reached max title length
+            cmp edx, BOOK_SIZE - 1
+            jl .parse_title_loop
+            
+            ; Title too long, skip to next field
+            .find_colon:
+                mov al, byte [esi]
+                inc esi
+                
+                cmp al, 0
+                je .done_parsing
+                cmp al, 10
+                je .end_line
+                cmp al, 13
+                je .end_line
+                cmp al, ':'
+                je .parse_stock
+                
+                jmp .find_colon
+        
+        .parse_stock:
+            ; Null-terminate the title
+            mov byte [edi + edx], 0
+            
+            ; Move past colon
+            inc esi
+            
+            ; Read stock value (single digit)
+            mov al, byte [esi]
+            sub al, '0'       ; Convert ASCII to number
+            
+            ; Store in books_stock_available
+            mov byte [books_stock_available + ecx], al
+            
+            ; Move past stock value to next colon
+            inc esi
+            
+            ; Check if we have a colon next
+            cmp byte [esi], ':'
+            jne .end_line
+            
+            ; Move past colon
+            inc esi
+            
+            ; Read borrowed value (single digit)
+            mov al, byte [esi]
+            sub al, '0'      ; Convert ASCII to number
+            
+            ; Store in books_stock_borrowed
+            mov byte [books_stock_borrowed + ecx], al
+            
+            ; Move past borrowed value
+            inc esi
+            
+        .end_line:
+            ; Skip to next line
+            .find_newline:
+                mov al, byte [esi]
+                
+                cmp al, 0
+                je .add_book
+                cmp al, 10
+                je .next_line_found
+                
+                inc esi
+                jmp .find_newline
+                
+        .next_line_found:
+            ; Move past newline
+            inc esi
+            
+        .add_book:
+            ; Increment book count
+            inc byte [book_num]
+            
+            ; Restore book counter
+            pop ecx
+            inc ecx
+            jmp .parse_loop
+                
+    .done_parsing:
+        popa
+        ret
 clear_input_var: ; cleans input var
     push ecx
     push edi
@@ -358,93 +601,6 @@ shift_inputBuffer: ; esi - string address, ecx - shift offset
         pop edi
         pop esi
         pop ecx
-        PRINT_STR inputBuffer, 100
-
-        ret
-
-
-initialize_book_array: ; read from text file and places saved books into array
-    pusha
-    
-    ; Clear book storage first
-    mov byte [book_num], 0
-    xor ecx, ecx
-    
-    .clear_books_loop:
-        cmp ecx, BOOK_MAX_SIZE
-        jge .done_clearing
-        
-        ; Clear available and borrowed counts
-        mov byte [books_stock_available + ecx], 0
-        mov byte [books_stock_borrowed + ecx], 0
-        inc ecx
-        jmp .clear_books_loop
-        
-    .done_clearing:
-        call read_file  ; Read file content into inputBuffer
-        
-        ; Parse file content and populate books array
-        xor ecx, ecx    ; Book counter
-        mov edi, inputBuffer
-        
-    .parse_loop:
-        ; Check if we've reached the end of input or book limit
-        cmp byte [edi], 0
-        je .done_parsing
-        cmp cl, BOOK_MAX_SIZE
-        jge .done_parsing
-        
-        ; Get book title
-        push ecx        ; Save book counter
-        
-        ; Copy book title to books array
-        mov esi, edi    ; Start of current line
-        
-        ; Calculate book location in array
-        movzx ecx, byte [book_num]
-        imul ecx, BOOK_SIZE    ; ecx = book_num * BOOK_SIZE
-        lea edi, byte [books + ecx] ; edi points to book slot
-        
-        ; Copy book title (esi) to books array (edi)
-        .copy_title_loop:
-            mov al, byte [esi]
-            mov byte [edi], al
-            inc esi
-            inc edi
-            
-            cmp al, 0
-            je .end_copy
-            cmp al, 10
-            je .end_copy
-            
-            jmp .copy_title_loop
-            
-        .end_copy:
-            ; Set initial available count to 1
-            mov byte [books_stock_available + ecx], 1
-            mov byte [books_stock_borrowed + ecx], 0
-            
-            ; Increment book count
-            inc byte [book_num]
-            
-            ; Find next line
-            .find_next_line:
-                cmp byte [esi], 0
-                je .done_parsing
-                cmp byte [esi], 10
-                je .next_line_found
-                inc esi
-                jmp .find_next_line
-                
-            .next_line_found:
-                inc esi    ; Move past newline
-                mov edi, esi
-                pop ecx
-                inc ecx
-                jmp .parse_loop
-                
-    .done_parsing:
-        popa
         ret
 get_input_from_buffer: ; assume string is stored in edi, place line into input var
     push eax
@@ -623,9 +779,7 @@ print_available_books:
         call get_book_at_index    ; Sets edi to current book
         
         ; Calculate string length
-        push edi
         call get_len              ; Returns length in edx
-        pop edi
         
         PRINT_STR edi, edx
         
@@ -715,9 +869,7 @@ print_borrowed_books:
         call get_book_at_index    ; Sets edi to current book
         
         ; Calculate string length
-        push edi
         call get_len              ; Returns length in edx
-        pop edi
         
         PRINT_STR edi, edx
         
@@ -808,14 +960,14 @@ add_book_menu:
         mov byte [edi + ecx], al
         inc ecx
         
-        test al, al
+        cmp al, 0
         jz .title_copied
         cmp ecx, 19
         jl .copy_title_loop
         
-        mov byte [edi + 19], 0  ; Ensure null termination
         
     .title_copied:
+        mov byte [edi + ecx], 0  ; Ensure null termination
         ; Set initial available count
         movzx ecx, byte [book_num]
         mov byte [books_stock_available + ecx], 1
@@ -977,8 +1129,8 @@ return_book_menu:
         
     .check_done:
         ; If no books borrowed, print message
-        test edx, edx
-        jz .no_borrowed
+        cmp edx, 0
+        je .no_borrowed
         
         ; Print borrowed books
         xor ecx, ecx
@@ -1040,6 +1192,9 @@ compare_string: ; stringA - edi, stringB - esi, size - ecx, returns bool at dl
     xor edx, edx    ; Clear result register
     
     .compare_loop:
+        cmp esi, 0
+        je .not_equal
+
         mov al, byte [edi]
         cmp al, byte [esi]
         jne .not_equal
@@ -1049,7 +1204,7 @@ compare_string: ; stringA - edi, stringB - esi, size - ecx, returns bool at dl
         jz .equal
         cmp al, 10
         je .equal
-        
+
         ; Continue comparing
         inc edi
         inc esi
@@ -1089,7 +1244,7 @@ book_exist: ; book title at esi - returns index at al register
     .check_loop:
         cmp cl, byte [book_num]
         jge .book_not_found
-        
+
         ; Get book at current index
         push ecx
         call get_book_at_index    ; Sets edi to current book
