@@ -32,3 +32,5 @@ Object Orient Programming (OOP) - Implements a Domain Model into A system
         - There is no one solution that fits all
 
     - OOP is how it is due to (HISTORY) with people's background that predisposes them to view something as beneficial than others such that the modularity of OOP is prioritied instead of the architectural benefit of Discriminant Union and so on from Systems such as SketchPad.
+
+Lack of Action and Too Much Thoughts Creates Stress or Fear
