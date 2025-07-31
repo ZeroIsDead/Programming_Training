@@ -9,15 +9,6 @@ main.o: main.asm
 
 all: clean main
 
-all_copy: clean copy
-
-copy: copy.o
-	ld -m elf_i386 main_copy.o -o run_main
-
-copy.o: main_copy.asm
-	nasm -f elf32 main_copy.asm -o main_copy.o
-
-
 # Clean build files
 clean:
 	@echo "Cleaning up..."
